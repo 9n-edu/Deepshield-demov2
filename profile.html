@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>員工個人資料</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f4f4f9; }
+        
+        .profile-container {
+            display: none; 
+            display: flex;
+            gap: 30px;
+            max-width: 800px;
+            margin: 40px auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .left-panel { flex: 1; text-align: center; border-right: 1px solid #eee; padding-right: 20px; display: flex; flex-direction: column; align-items: center; }
+        
+        .img-container { position: relative; width: 250px; height: 250px; margin-bottom: 15px; }
+        .img-container img { width: 100%; height: 100%; border-radius: 8px; border: 2px solid #ddd; object-fit: contain; }
+        
+        .warning-overlay { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 150px; height: 150px; pointer-events: none; z-index: 10; }
+        .img-container.tampered .warning-overlay { display: block; }
+        
+        .left-panel h3 { margin-top: 5px; color: #333; font-size: 16px; margin-bottom: 5px; }
+
+        /* 身分確認區塊 */
+        .verify-block { display: none; width: 100%; margin-top: 10px; padding: 15px; background: #fff3cd; border: 1px solid #ffeeba; border-radius: 5px; }
+        .verify-text { font-size: 14px; font-weight: bold; color: #856404; margin-bottom: 12px; line-height: 1.4; }
+        .verify-buttons { display: flex; gap: 10px; justify-content: center; }
+        
+        .right-panel { flex: 2; display: flex; flex-direction: column; justify-content: center; gap: 15px; }
+        .info-row { display: flex; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .info-label { font-weight: bold; width: 100px; color: #555; }
+        .info-value { flex: 1; color: #222; }
+        
+        .button-row { display: flex; gap: 10px; margin-top: 10px; }
+        .btn { padding: 8px 15px; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        .btn-primary { background-color: #007BFF; }
+        .btn-primary:hover { background-color: #0056b3; }
+        .btn-danger { background-color: #dc3545; }
+        .btn-danger:hover { background-color: #c82333; }
+        .btn-warning { background-color: #5b7cfa; width: 100%; }
+        .btn-warning:hover { background-color: #4264d8; }
+        .btn-outline { background-color: white; color: #333; border: 1px solid #ccc; }
+        .btn-outline:hover { background-color: #f8f9fa; }
+    </style>
+</head>
+<body>
+
+    <div class="profile-container" id="profileContainer">
+        
+        <div class="left-panel">
+            <div class="img-container" id="profileImgContainer">
+                <img id="userPhoto" src="" alt="員工證件照">
+                <svg class="warning-overlay" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M50 15 L15 80 L85 80 Z" fill="none" stroke="#e74c3c" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" />
+                    <line x1="50" y1="35" x2="50" y2="60" stroke="#e74c3c" stroke-width="6" stroke-linecap="round" />
+                    <circle cx="50" cy="72" r="4" fill="#e74c3c" />
+                </svg>
+            </div>
+            <h3 id="photoStatus">證件照</h3>
+            
+            <!-- 遭竄改時才會顯示的互動確認區塊 -->
+            <div class="verify-block" id="verifyBlock">
+                <div class="verify-text" id="verifyText">系統已攔截攻擊並嘗試修復影像。<br>請問這張照片是您本人嗎？</div>
+                
+                <div class="verify-buttons" id="verifyButtons">
+                    <button class="btn btn-primary" onclick="confirmIdentity(true)">是本人</button>
+                    <button class="btn btn-outline" onclick="confirmIdentity(false)">不是本人</button>
+                </div>
+
+                <input type="file" id="reuploadInput" style="display:none;" accept="image/*" onchange="handleReupload(event)">
+                <button class="btn btn-warning" id="btnReupload" style="display:none; margin-top: 10px;" onclick="document.getElementById('reuploadInput').click()">選擇檔案並重新上傳</button>
+            </div>
+        </div>
+
+        <div class="right-panel">
+            <div class="info-row"><div class="info-label">員工編號</div><div class="info-value" id="userEmpId" style="font-weight: bold; color: #007BFF;">-</div></div>
+            <div class="info-row"><div class="info-label">姓名</div><div class="info-value" id="userName">-</div></div>
+            <div class="info-row"><div class="info-label">性別</div><div class="info-value" id="userGender">-</div></div>
+            <div class="info-row"><div class="info-label">部門</div><div class="info-value" id="userDept">-</div></div>
+            <div class="info-row"><div class="info-label">職位</div><div class="info-value" id="userPosition">-</div></div>
+            <div class="info-row"><div class="info-label">密碼</div><div class="info-value">********</div></div>
+            
+            <div class="button-row">
+                <button class="btn btn-primary" onclick="modifyPassword()">修改密碼</button>
+                <button class="btn btn-danger" onclick="logout()">登出系統</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const empId = localStorage.getItem('loggedInEmpId');
+
+        window.onload = async function() {
+            if (!empId) {
+                alert('請先登入系統！');
+                window.location.href = 'login.html';
+                return;
+            }
+
+            try {
+                const response = await fetch(`http://127.0.0.1:8000/api/get_employee/${empId}`);
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    const data = result.data;
+                    document.getElementById('userPhoto').src = data.encrypted_photo_base64;
+                    document.getElementById('userEmpId').textContent = data.emp_id;
+                    document.getElementById('userName').textContent = data.name;
+                    document.getElementById('userGender').textContent = data.gender;
+                    document.getElementById('userDept').textContent = data.department;
+                    document.getElementById('userPosition').textContent = data.position;
+                    
+                    document.getElementById('profileContainer').style.display = 'flex';
+                    verifyProfileImage();
+                } else {
+                    alert('資料載入失敗，請重新登入。');
+                    logout();
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        };
+
+        async function verifyProfileImage() {
+            try {
+                const res = await fetch(`http://127.0.0.1:8000/api/auto_verify/${empId}`);
+                const result = await res.json();
+                
+                if (result.status === 'success') {
+                    document.getElementById('userPhoto').src = result.image;
+                    
+                    if (result.is_tampered) {
+                        document.getElementById('profileImgContainer').classList.add('tampered');
+                        document.getElementById('photoStatus').innerHTML = "<span style='color: #e74c3c;'>⚠ 影像曾遭惡意竄改</span>";
+                        document.getElementById('verifyBlock').style.display = "block";
+                    }
+                }
+            } catch (error) {
+                console.error('驗證連線失敗:', error);
+            }
+        }
+
+        // 處理使用者的身分確認回應
+        function confirmIdentity(isMe) {
+            document.getElementById('verifyButtons').style.display = "none";
+            document.getElementById('btnReupload').style.display = "block";
+            
+            const textEl = document.getElementById('verifyText');
+        }
+
+        async function handleReupload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            document.getElementById('verifyText').textContent = "影像處理與重新加密中，請稍候...";
+            document.getElementById('btnReupload').style.display = "none";
+            
+            const formData = new FormData();
+            formData.append('emp_id', empId);
+            formData.append('photo', file);
+
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/reupload_photo', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await res.json();
+
+                if (result.status === 'success') {
+                    alert(result.message);
+                    document.getElementById('userPhoto').src = result.new_image;
+                    document.getElementById('profileImgContainer').classList.remove('tampered');
+                    document.getElementById('verifyBlock').style.display = "none";
+                    document.getElementById('photoStatus').textContent = "證件照";
+                } else {
+                    const errorMsg = result.message || result.detail || JSON.stringify(result);
+                    alert(`上傳失敗: ${errorMsg}`);
+                    document.getElementById('verifyText').innerHTML = "上傳失敗，請重試。";
+                    document.getElementById('btnReupload').style.display = "block";
+                }
+            } catch (error) {
+                alert(`連線錯誤: ${error}`);
+                document.getElementById('verifyText').innerHTML = "連線失敗，請重試。";
+                document.getElementById('btnReupload').style.display = "block";
+            }
+            
+            event.target.value = "";
+        }
+
+        function logout() {
+            localStorage.removeItem('loggedInEmpId');
+            window.location.href = 'login.html';
+        }
+
+        function modifyPassword() {
+            alert("系統將發送重設密碼驗證信至您的信箱。");
+        }
+    </script>
+</body>
+</html>

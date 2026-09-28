@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>部門員工總覽</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f4f4f9; }
+        .header { display: flex; justify-content: space-between; align-items: center; max-width: 1000px; margin: 0 auto 20px auto; }
+        
+        /* 頂部按鈕區塊 */
+        .header-buttons { display: flex; gap: 10px; }
+        .btn-audit-link { padding: 8px 15px; background-color: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-audit-link:hover { background-color: #138496; }
+        .btn-profile { padding: 8px 15px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-profile:hover { background-color: #218838; }
+        .btn-logout { padding: 8px 15px; background-color: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-logout:hover { background-color: #c82333; }
+        
+        /* 員工網格排列 */
+        .grid-container { display: flex; flex-wrap: wrap; gap: 20px; max-width: 1000px; margin: auto; }
+        .employee-card { 
+            background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+            text-align: center; width: 180px; cursor: pointer; transition: transform 0.2s;
+            display: flex; flex-direction: column;
+        }
+        .employee-card:hover { transform: scale(1.05); border: 1px solid #007BFF; }
+        
+        /* 圖片容器與警告疊加層 */
+        .img-container { position: relative; width: 100%; height: 180px; margin-bottom: 10px; }
+        .img-container img { width: 100%; height: 100%; object-fit: contain; border-radius: 4px; border: 1px solid #eee; }
+        
+        .warning-overlay {
+            display: none; /* 預設隱藏 */
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 120px;
+            height: 120px;
+            pointer-events: none;
+            z-index: 10;
+        }
+        /* 當容器被加上 tampered class 時顯示警告標記 */
+        .img-container.tampered .warning-overlay { display: block; }
+
+        .employee-card .emp-name { font-weight: bold; font-size: 16px; color: #333; }
+        .employee-card .emp-id { font-size: 14px; color: #777; margin-top: 5px; }
+        .verify-status { font-size: 12px; font-weight: bold; margin-top: 8px; color: #888; }
+
+        /* Modal 樣式省略以維持精簡，直接延用原版 */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 1000; }
+        .modal-content { background: white; padding: 30px; border-radius: 8px; max-width: 800px; width: 90%; display: flex; gap: 30px; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .close-btn { position: absolute; top: 15px; right: 20px; font-size: 24px; font-weight: bold; cursor: pointer; color: #888; }
+        .close-btn:hover { color: #dc3545; }
+        .left-panel { flex: 1; text-align: center; border-right: 1px solid #eee; padding-right: 20px; }
+        .left-panel img { width: 250px; height: 250px; border-radius: 8px; border: 2px solid #ddd; object-fit: contain; }
+        .right-panel { flex: 1.5; display: flex; flex-direction: column; justify-content: center; gap: 15px; }
+        .info-row { display: flex; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .info-label { font-weight: bold; width: 100px; color: #555; }
+        .info-value { flex: 1; color: #222; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2><span id="deptTitle"></span> 員工總覽</h2>
+        <div class="header-buttons">
+            <button class="btn-profile" onclick="goToMyProfile()">我的個人資料</button>
+            <button class="btn-logout" onclick="logout()">登出系統</button>
+        </div>
+    </div>
+
+    <div class="grid-container" id="employeeGrid"></div>
+
+    <!-- 個人資料彈出視窗 -->
+    <div class="modal-overlay" id="profileModal" onclick="closeModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <span class="close-btn" onclick="closeModal(event)">&times;</span>
+            <div class="left-panel">
+                <img id="modalPhoto" src="" alt="員工證件照">
+                <h3 id="modalStatusText">證件照</h3>
+            </div>
+            <div class="right-panel">
+                <div class="info-row"><div class="info-label">員工編號</div><div class="info-value" id="modalEmpId" style="font-weight: bold; color: #007BFF;"></div></div>
+                <div class="info-row"><div class="info-label">姓名</div><div class="info-value" id="modalName"></div></div>
+                <div class="info-row"><div class="info-label">性別</div><div class="info-value" id="modalGender"></div></div>
+                <div class="info-row"><div class="info-label">入職日期</div><div class="info-value" id="modalHireDate"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let departmentEmployees = [];
+
+        window.onload = async function() {
+            const role = localStorage.getItem('roleLevel');
+            const dept = localStorage.getItem('department');
+
+            if (role !== 'admin') {
+                alert('權限不足，僅限該部門主管進入。');
+                window.location.href = 'login.html';
+                return;
+            }
+
+            document.getElementById('deptTitle').textContent = dept;
+
+            try {
+                const response = await fetch(`http://127.0.0.1:8000/api/get_department_employees/${dept}`);
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    departmentEmployees = result.data;
+                    renderGrid(departmentEmployees);
+                    // 渲染完畢後，開始在背景自動驗證所有影像
+                    triggerBackgroundVerification(departmentEmployees);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        };
+
+        function renderGrid(employees) {
+            const grid = document.getElementById('employeeGrid');
+            grid.innerHTML = ''; 
+
+            employees.forEach(emp => {
+                const card = document.createElement('div');
+                card.className = 'employee-card';
+                card.onclick = () => openModal(emp.emp_id);
+                
+                // 內建一個類似手繪的紅色警告三角形 SVG (預設隱藏)
+                card.innerHTML = `
+                    <div class="img-container" id="img-container-${emp.emp_id}">
+                        <img id="img-${emp.emp_id}" src="${emp.encrypted_photo_base64}" alt="Photo">
+                        <svg class="warning-overlay" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M50 15 L15 80 L85 80 Z" fill="none" stroke="#e74c3c" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" />
+                            <line x1="50" y1="35" x2="50" y2="60" stroke="#e74c3c" stroke-width="6" stroke-linecap="round" />
+                            <circle cx="50" cy="72" r="4" fill="#e74c3c" />
+                        </svg>
+                    </div>
+                    <div class="emp-name">${emp.name}</div>
+                    <div class="emp-id">${emp.emp_id}</div>
+                    <div class="verify-status" id="status-${emp.emp_id}">🛡️ 驗證中...</div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        // 背景自動驗證與修復功能
+        function triggerBackgroundVerification(employees) {
+            employees.forEach(async emp => {
+                try {
+                    const res = await fetch(`http://127.0.0.1:8000/api/auto_verify/${emp.emp_id}`);
+                    const result = await res.json();
+                    
+                    if (result.status === 'success') {
+                        const imgEl = document.getElementById(`img-${emp.emp_id}`);
+                        const containerEl = document.getElementById(`img-container-${emp.emp_id}`);
+                        const statusEl = document.getElementById(`status-${emp.emp_id}`);
+
+                        // 無論是否竄改，都將 src 更新為 API 回傳的安全/修復影像
+                        imgEl.src = result.image;
+                        emp.encrypted_photo_base64 = result.image; // 同步更新本機資料供 Modal 使用
+
+                        if (result.is_tampered) {
+                            // 標記紅色警告並修改狀態文字
+                            containerEl.classList.add('tampered');
+                            statusEl.innerHTML = "<span style='color: #e74c3c;'>⚠ 已攔截竄改並修復</span>";
+                            emp.isTampered = true;
+                        } else {
+                            statusEl.innerHTML = "<span style='color: #2ecc71;'>✔ 影像完整安全</span>";
+                        }
+                    }
+                } catch (error) {
+                    document.getElementById(`status-${emp.emp_id}`).innerText = "❌ 驗證連線失敗";
+                }
+            });
+        }
+
+        function openModal(empId) {
+            const emp = departmentEmployees.find(e => e.emp_id === empId);
+            if (!emp) return;
+
+            document.getElementById('modalPhoto').src = emp.encrypted_photo_base64;
+            document.getElementById('modalEmpId').textContent = emp.emp_id;
+            document.getElementById('modalName').textContent = emp.name;
+            document.getElementById('modalGender').textContent = emp.gender;
+            document.getElementById('modalHireDate').textContent = emp.hire_date || '未記錄 (舊帳號)';
+            
+            // 若為曾被竄改修復的帳號，在詳細資料中給予紅字提示
+            const statusText = document.getElementById('modalStatusText');
+            if(emp.isTampered) {
+                statusText.innerHTML = "<span style='color:#e74c3c;'>⚠️ 系統已自動修復此影像</span>";
+            } else {
+                statusText.innerHTML = "證件照";
+            }
+
+            document.getElementById('profileModal').style.display = 'flex';
+        }
+
+        function closeModal(e) {
+            if (e) e.stopPropagation();
+            document.getElementById('profileModal').style.display = 'none';
+        }
+
+        function goToMyProfile() { window.location.href = 'profile.html'; }
+        function logout() { localStorage.clear(); window.location.href = 'login.html'; }
+    </script>
+</body>
+</html>

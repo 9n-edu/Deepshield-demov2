@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>惡意攻擊模擬器 (Attacker Terminal)</title>
+    <style>
+        body { font-family: 'Courier New', Courier, monospace; padding: 20px; background-color: #121212; color: #00ff00; }
+        .container { max-width: 900px; margin: auto; background: #1e1e1e; padding: 30px; border: 1px solid #00ff00; border-radius: 5px; box-shadow: 0 0 15px rgba(0, 255, 0, 0.2); }
+        h2 { text-align: center; border-bottom: 1px dashed #00ff00; padding-bottom: 10px; }
+        
+        .control-panel { display: flex; flex-direction: column; gap: 15px; margin-bottom: 30px; }
+        .form-group { display: flex; align-items: center; gap: 10px; }
+        .form-group label { width: 140px; font-weight: bold; }
+        .form-group input, .form-group select { 
+            flex: 1; padding: 8px; background: #000; color: #00ff00; border: 1px solid #00ff00; 
+        }
+        
+        .btn-attack { padding: 12px; background: #cc0000; color: white; border: none; font-size: 16px; font-weight: bold; cursor: pointer; border-radius: 3px; text-transform: uppercase; letter-spacing: 2px; }
+        .btn-attack:hover { background: #ff0000; box-shadow: 0 0 10px red; }
+
+        .image-compare { display: flex; gap: 20px; justify-content: space-between; margin-top: 20px; }
+        .img-box { flex: 1; text-align: center; border: 1px dashed #555; padding: 10px; background: #000; min-height: 200px; }
+        .img-box img { max-width: 100%; max-height: 250px; object-fit: contain; }
+        
+        .terminal-log { margin-top: 20px; background: #000; padding: 10px; height: 120px; overflow-y: auto; border: 1px solid #333; font-size: 14px; line-height: 1.5; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>⚠ ATTACKER TERMINAL ⚠</h2>
+        
+        <div class="control-panel">
+            <div class="form-group">
+                <label>選擇攻擊目標</label>
+                <!-- 網頁載入時會自動填入所有員工 -->
+                <select id="targetEmpId" onchange="fetchOriginal()">
+                    <option value="">載入目標名單中...</option>
+                </select>
+            </div>
+            
+            <!-- 新增：用來選擇拼貼來源的下拉選單 -->
+            <div class="form-group" id="sourceImageGroup" style="display: none;">
+                <label>選擇拼貼來源</label>
+                <select id="sourceEmpId">
+                    <option value="">-- 請選擇提供拼貼內容的員工 --</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>選擇攻擊模式</label>
+                <select id="attackType" onchange="toggleSourceSelect()">
+                    <option value="none">不破壞 (None)</option>
+                    <option value="doodle">由上而下塗鴉 (Doodle Attack)</option>
+                    <option value="deletion">中心刪除攻擊 (Deletion Attack)</option>
+                    <option value="copy_paste">網格平移拼貼 (Collage/Copy-Paste)</option>
+                    <option value="ca">連續區塊置換 (CA Attack)</option>
+                    <!-- 加入隨機區塊攻擊 -->
+                    <option value="random_block">隨機區塊攻擊 (Random Block)</option>
+                    <option value="manual">手動繪圖塗鴉 (Manual Paint)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>竄改比例 (%)</label>
+                <input type="number" id="attackRatio" value="50" min="1" max="99">
+            </div>
+            <button class="btn-attack" onclick="executeAttack()">執行攻擊並覆蓋資料庫</button>
+        </div>
+
+        <div class="image-compare">
+            <div class="img-box">
+                <h4 style="color: #888;">攔截到的原始影像</h4>
+                <img id="originalImg" src="" alt="請先選擇目標">
+            </div>
+            <div class="img-box">
+                <h4 style="color: #ff3333;">覆蓋入庫的竄改影像</h4>
+                <img id="tamperedImg" src="" alt="等待攻擊執行...">
+            </div>
+        </div>
+
+        <div class="terminal-log" id="logOutput">
+            [系統] 準備就緒，正在掃描資料庫...
+        </div>
+    </div>
+
+    <script>
+        function logMsg(msg) {
+            const logPanel = document.getElementById('logOutput');
+            logPanel.innerHTML += `<br>[${new Date().toLocaleTimeString()}] ${msg}`;
+            logPanel.scrollTop = logPanel.scrollHeight;
+        }
+
+        // 當選擇的攻擊模式改變時，決定是否顯示「拼貼來源」選單
+        function toggleSourceSelect() {
+            const type = document.getElementById('attackType').value;
+            const sourceGroup = document.getElementById('sourceImageGroup');
+            // ca 或 copy_paste(collage) 需要另一張圖
+            if (type === 'ca' || type === 'copy_paste' || type === 'collage') {
+                sourceGroup.style.display = 'flex';
+            } else {
+                sourceGroup.style.display = 'none';
+            }
+        }
+
+        // 網頁載入時自動取得所有員工名單
+        window.onload = async function() {
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/get_all_employees');
+                const result = await res.json();
+                
+                const selectElement = document.getElementById('targetEmpId');
+                const sourceElement = document.getElementById('sourceEmpId'); // 取得拼貼來源選單
+                
+                selectElement.innerHTML = '<option value="">-- 請選擇要攻擊的員工 --</option>';
+                sourceElement.innerHTML = '<option value="">-- 請選擇提供拼貼內容的員工 --</option>';
+
+                if(result.status === 'success') {
+                    result.data.forEach(emp => {
+                        const optionText = `[${emp.department}] ${emp.emp_id} - ${emp.name}`;
+                        
+                        const optionTgt = document.createElement('option');
+                        optionTgt.value = emp.emp_id;
+                        optionTgt.textContent = optionText;
+                        selectElement.appendChild(optionTgt);
+
+                        const optionSrc = document.createElement('option');
+                        optionSrc.value = emp.emp_id;
+                        optionSrc.textContent = optionText;
+                        sourceElement.appendChild(optionSrc);
+                    });
+                    logMsg(`掃描完成，共發現 ${result.data.length} 個潛在目標。`);
+                } else {
+                    logMsg(`名單取得失敗: ${result.message}`);
+                }
+            } catch (err) {
+                logMsg(`連線錯誤: 無法取得名單 (${err})`);
+            }
+        };
+
+        // 當下拉選單改變時，自動載入該員工的影像
+        async function fetchOriginal() {
+            const empId = document.getElementById('targetEmpId').value;
+            document.getElementById('originalImg').src = "";
+            document.getElementById('tamperedImg').src = "";
+            
+            if(!empId) return;
+            
+            logMsg(`鎖定目標 ${empId}，正在攔截影像資料...`);
+            try {
+                const res = await fetch(`http://127.0.0.1:8000/api/get_employee/${empId}`);
+                const data = await res.json();
+                if(data.status === 'success') {
+                    document.getElementById('originalImg').src = data.data.encrypted_photo_base64;
+                    logMsg("影像攔截成功，隨時可發動攻擊。");
+                } else {
+                    logMsg(`攔截失敗: ${data.message}`);
+                }
+            } catch (err) {
+                logMsg(`連線錯誤: ${err}`);
+            }
+        }
+
+        // 執行攻擊並覆蓋
+        async function executeAttack() {
+            const empId = document.getElementById('targetEmpId').value;
+            const type = document.getElementById('attackType').value;
+            const ratio = document.getElementById('attackRatio').value;
+            const sourceEmpId = document.getElementById('sourceEmpId').value;
+
+            if(!empId || !document.getElementById('originalImg').src) {
+                return alert("請先從選單選擇一個有效的攻擊目標！");
+            }
+
+            // 檢查如果需要雙圖，是否有選擇來源
+            if ((type === 'ca' || type === 'copy_paste' || type === 'collage') && !sourceEmpId) {
+                return alert("請選擇『拼貼來源』影像！");
+            }
+
+            let msg = `[危險] 開始對 ${empId} 執行 ${type.toUpperCase()} 攻擊 (強度: ${ratio}%)`;
+            if (type === 'ca' || type === 'copy_paste' || type === 'collage') {
+                msg += `，來源影像: ${sourceEmpId}`;
+            }
+            logMsg(msg + " ...");
+            
+            const formData = new FormData();
+            formData.append('emp_id', empId);
+            formData.append('attack_type', type);
+            formData.append('ratio', ratio);
+            // 傳送來源員工 ID，如果沒選則傳空字串
+            formData.append('source_emp_id', sourceEmpId || "");
+
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/execute_attack', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                
+                if(data.status === 'success') {
+                    document.getElementById('tamperedImg').src = data.new_image;
+                    logMsg(`<span style="color:red; font-weight:bold;">➤ ${data.message}</span>`);
+                } else {
+                    logMsg(`攻擊失敗: ${data.message}`);
+                }
+            } catch (err) {
+                logMsg(`執行錯誤: ${err}`);
+            }
+        }
+    </script>
+</body>
+</html>

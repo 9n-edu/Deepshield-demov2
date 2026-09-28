@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>🛡️ 系統管理員 - 影像加密與修復稽核</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; margin: 0; padding: 20px; color: #334155; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #e2e8f0; }
+        .header h2 { margin: 0; color: #1e3a8a; }
+        .control-panel { display: flex; gap: 15px; align-items: center; background: white; padding: 15px 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        select { padding: 8px 12px; font-size: 15px; border-radius: 4px; border: 1px solid #cbd5e1; min-width: 300px; }
+        
+        /* 頁籤樣式 */
+        .tabs { display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; }
+        .tab-btn { padding: 10px 20px; border: none; background: transparent; font-size: 16px; font-weight: bold; color: #64748b; cursor: pointer; border-bottom: 3px solid transparent; }
+        .tab-btn.active { color: #2563eb; border-bottom: 3px solid #2563eb; }
+        .tab-content { display: none; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .tab-content.active { display: block; }
+
+        /* 互動元件共用樣式 */
+        .fixed-white-card { background-color: #ffffff; border: 1.5px solid #94a3b8; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.08); padding: 16px; margin-bottom: 16px; }
+        .hd-canvas { width: 100%; height: 100%; display: block; }
+        .grid-cell, .dec-grid-cell { border-right: 1px solid #000; border-bottom: 1px solid #000; box-sizing: border-box; cursor: pointer; }
+        
+        button { cursor: pointer; }
+        button:disabled { cursor: not-allowed; opacity: 0.6; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2>🛡️ 系統管理員：資料庫影像加密與修復稽核</h2>
+        <button onclick="window.location.href='manager.html'" style="padding: 8px 15px; background: #64748b; color: white; border: none; border-radius: 4px;">返回主管總覽</button>
+    </div>
+
+    <div class="control-panel">
+        <label style="font-weight: bold;">選擇稽核目標：</label>
+        <select id="empSelect" onchange="fetchAnalysis()">
+            <option value="">載入名單中...</option>
+        </select>
+        <span id="loadingStatus" style="color: #2563eb; font-weight: bold;"></span>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab(event, 'embedTab')">🔐 內部加密過程展示 (Embed)</button>
+        <button class="tab-btn" onclick="switchTab(event, 'recoverTab')">🛠️ 竄改與修復細部流程 (Recover)</button>
+    </div>
+
+    <!-- 頁籤 1: Embed -->
+    <div id="embedTab" class="tab-content active">
+        <div style="display: flex; gap: 20px; align-items: flex-start; width: 100%;">
+            <div style="flex: 0 0 260px; position: relative;">
+                <div style="position: relative; width: 260px; height: 260px; border-radius: 8px; border: 2px solid #000; background: #000; overflow: hidden;">
+                    <img id="embedMainImg" src="" style="width: 100%; height: 100%; object-fit: fill;" />
+                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr);" id="embedGrid"></div>
+                    <div id="embedSelected" style="position: absolute; border: 3px solid #2563eb; box-shadow: inset 0 0 0 1px #fff; display: none; pointer-events: none;"></div>
+                </div>
+                <div style="text-align: center; margin-top: 10px; font-size: 13px; font-weight: bold; color: #475569;">💡 點選上方 4×4 任一區塊檢視特徵</div>
+            </div>
+
+            <div style="flex: 1; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 18px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-weight: bold;">
+                    <div>區塊編號: <span id="eBlockId" style="color:#1d4ed8; font-size:18px;">-</span> | Arnold 置換: <span id="eArnoldMax" style="color:#059669; font-size:18px;">-</span></div>
+                    <div id="eBadge" style="padding: 4px 12px; background: #e2e8f0; border-radius: 12px; font-size: 12px;">等待載入...</div>
+                </div>
+                
+                <div class="fixed-white-card" style="display: flex; gap: 20px;">
+                    <div style="position: relative; width: 320px; height: 320px; background: #000; border-radius: 6px; border: 2px solid #475569;">
+                        <canvas id="eRealCanvas" width="640" height="640" class="hd-canvas"></canvas>
+                        <div id="eLaser" style="position: absolute; top:0; left:0; width:100%; height:3px; background:#38bdf8; box-shadow: 0 0 10px #38bdf8; display:none;"></div>
+                    </div>
+                    <div style="flex: 1;">
+                        <h4 style="margin:0 0 10px 0; color:#1e3a8a;">區塊特徵狀態</h4>
+                        <input type="range" id="eSlider" min="0" max="0" value="0" disabled style="width: 100%; margin-bottom: 15px;">
+                        <button id="eBtnXor" style="width:100%; padding:9px; background:#1d4ed8; color:#fff; border-radius:6px; border:none; margin-bottom:10px;">▶ 執行 XOR 混淆</button>
+                        <button id="eBtnArnold" disabled style="width:100%; padding:9px; background:#e2e8f0; color:#64748b; border-radius:6px; border:none; margin-bottom:10px;">⚡ 一鍵完成 Arnold 置換</button>
+                    </div>
+                </div>
+
+                <div class="fixed-white-card">
+                    <h4 style="margin:0 0 10px 0; color:#1e3a8a;">階段矩陣比對 (16×16)</h4>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                        <div style="text-align: center;"><div style="border: 1px solid #64748b; background:#fff;"><canvas id="eOrigCanvas" width="480" height="480" class="hd-canvas"></canvas></div><small>原始 Bottleneck</small></div>
+                        <div style="text-align: center;"><div style="border: 1px solid #64748b; background:#fff;"><canvas id="eXorCanvas" width="480" height="480" class="hd-canvas"></canvas></div><small>XOR 混淆後</small></div>
+                        <div style="text-align: center;"><div style="border: 1px solid #64748b; background:#fff;"><canvas id="eArnoldCanvas" width="480" height="480" class="hd-canvas"></canvas></div><small>Arnold 轉置後</small></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 頁籤 2: Recover -->
+    <div id="recoverTab" class="tab-content">
+        <div style="display: flex; gap: 20px; align-items: flex-start; width: 100%;">
+            <div style="flex: 0 0 260px; position: relative;">
+                <div style="position: relative; width: 260px; height: 260px; border-radius: 8px; border: 2px solid #000; background: #000; overflow: hidden;">
+                    <img id="recoverMainImg" src="" style="width: 100%; height: 100%; object-fit: fill;" />
+                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr);" id="recoverGrid"></div>
+                    <div id="recoverSelected" style="position: absolute; border: 3px solid #2563eb; box-shadow: inset 0 0 0 1px #fff; display: none; pointer-events: none;"></div>
+                </div>
+            </div>
+
+            <div style="flex: 1; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 18px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-weight: bold;">
+                    <div>區塊編號: <span id="rBlockId" style="color:#1d4ed8; font-size:18px;">-</span> | 逆 Arnold: <span id="rArnoldMax" style="color:#059669; font-size:18px;">-</span></div>
+                    <div id="rBadge" style="padding: 4px 12px; background: #e2e8f0; border-radius: 12px; font-size: 12px;">等待載入...</div>
+                </div>
+                
+                <div class="fixed-white-card" style="display: flex; gap: 20px;">
+                    <div style="position: relative; width: 320px; height: 320px; background: #000; border-radius: 6px; border: 2px solid #475569;">
+                        <canvas id="rRealCanvas" width="640" height="640" class="hd-canvas"></canvas>
+                        <div id="rLaser" style="position: absolute; bottom:0; left:0; width:100%; height:3px; background:#38bdf8; box-shadow: 0 0 10px #38bdf8; display:none;"></div>
+                    </div>
+                    <div style="flex: 1;">
+                        <h4 style="margin:0 0 10px 0; color:#1e3a8a;">逆 Arnold 空間復原</h4>
+                        <input type="range" id="rSlider" min="0" max="0" value="0" disabled style="width: 100%; margin-bottom: 15px;">
+                        <button id="rBtnArnold" style="width:100%; padding:9px; background:#6d28d9; color:#fff; border-radius:6px; border:none; margin-bottom:10px;">⚡ 一鍵逆 Arnold</button>
+                        <button id="rBtnXor" disabled style="width:100%; padding:9px; background:#e2e8f0; color:#64748b; border-radius:6px; border:none; margin-bottom:10px;">▶ 執行 解 XOR</button>
+                    </div>
+                </div>
+
+                <div class="fixed-white-card">
+                    <h4 style="margin:0 0 10px 0; color:#1e3a8a;">區塊特徵矩陣 (16×16)</h4>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                        <div style="text-align: center;"><div style="border: 1px solid #64748b; background:#fff;"><canvas id="r2lsbCanvas" width="480" height="480" class="hd-canvas"></canvas></div><small>(1) 2LSB 提取</small></div>
+                        <div style="text-align: center;"><div style="border: 1px solid #64748b; background:#fff;"><canvas id="rInvArnoldCanvas" width="480" height="480" class="hd-canvas"></canvas></div><small>(2) 逆 Arnold 後</small></div>
+                        <div style="text-align: center;"><div style="border: 1px solid #64748b; background:#fff;"><canvas id="rRestoredCanvas" width="480" height="480" class="hd-canvas"></canvas></div><small>(3) 解 XOR 候選特徵</small></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <hr style="margin: 30px 0; border: 1px solid #e2e8f0;">
+        
+        <!-- 6 階段導覽與最終結果 -->
+        <h4 style="color: #1e3a8a;">🔍 竄改定位 6 階段演算導覽</h4>
+        <div style="display: flex; gap: 20px; align-items: center; background: #fff; padding: 20px; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 30px;">
+            <img id="stepperImg" src="" style="width: 180px; height: 180px; background: #000; border-radius: 6px; object-fit: contain;">
+            <div style="flex: 1;">
+                <input type="range" id="stepperSlider" min="0" max="5" value="0" style="width: 100%; margin-bottom: 15px;">
+                <div id="stepperDesc" style="font-weight: bold; font-size: 14px; color: #334155;">1. 接收影像</div>
+            </div>
+        </div>
+
+        <h4 style="color: #1e3a8a;">🔍 最終修復結果對照</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; text-align: center; font-weight: bold;">
+            <div><img id="finalTampered" src="" style="width: 100%; border-radius: 6px; border: 1px solid #cbd5e1;"><br>資料庫當前影像</div>
+            <div><img id="finalMask" src="" style="width: 100%; border-radius: 6px; border: 1px solid #cbd5e1;"><br>系統偵測破壞遮罩</div>
+            <div><img id="finalRecovered" src="" style="width: 100%; border-radius: 6px; border: 1px solid #cbd5e1;"><br>演算法重建乾淨影像</div>
+        </div>
+    </div>
+
+    <script>
+        let embedData = null;
+        let recoverData = null;
+        let stepImages = [];
+        const stepDesc = ["1. 接收影像", "2. 區塊級偵測", "3. 像素級偵測", "4. 逆向映射", "5. 放大特徵圖", "6. 最終形態學遮罩"];
+
+        window.onload = async function() {
+            const res = await fetch('http://127.0.0.1:8000/api/get_all_employees');
+            const data = await res.json();
+            const sel = document.getElementById('empSelect');
+            if(data.status === 'success') {
+                data.data.forEach(emp => {
+                    sel.innerHTML += `<option value="${emp.emp_id}">${emp.emp_id} - ${emp.name}</option>`;
+                });
+            }
+        };
+
+        function switchTab(evt, tabId) {
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            evt.currentTarget.classList.add('active');
+        }
+
+        async function fetchAnalysis() {
+            const empId = document.getElementById('empSelect').value;
+            if(!empId) return;
+            
+            document.getElementById('loadingStatus').textContent = "🔄 正在執行深度分析與解碼，請稍候...";
+            
+            try {
+                const res = await fetch(`http://127.0.0.1:8000/api/admin_audit_details/${empId}`);
+                const data = await res.json();
+                
+                if(data.status === 'success') {
+                    embedData = data.embed_blocks[0];
+                    recoverData = data.recover_blocks;
+                    stepImages = [data.images.tampered, data.images.v1, data.images.v2, data.images.step2, data.images.step3, data.images.mask].map(b => "data:image/png;base64," + b);
+
+                    document.getElementById('embedMainImg').src = "data:image/png;base64," + data.images.tampered;
+                    document.getElementById('recoverMainImg').src = "data:image/png;base64," + data.images.tampered;
+                    
+                    document.getElementById('finalTampered').src = "data:image/png;base64," + data.images.tampered;
+                    document.getElementById('finalMask').src = "data:image/png;base64," + data.images.mask;
+                    document.getElementById('finalRecovered').src = "data:image/png;base64," + data.images.recovered;
+
+                    buildGrid('embedGrid', 'embedSelected', loadEmbedBlock);
+                    buildGrid('recoverGrid', 'recoverSelected', loadRecoverBlock);
+                    
+                    loadEmbedBlock(0, document.querySelector('#embedGrid .grid-cell[data-id="0"]'));
+                    loadRecoverBlock(0, document.querySelector('#recoverGrid .grid-cell[data-id="0"]'));
+                    
+                    document.getElementById('stepperSlider').oninput = (e) => {
+                        document.getElementById('stepperImg').src = stepImages[e.target.value];
+                        document.getElementById('stepperDesc').textContent = stepDesc[e.target.value];
+                    };
+                    document.getElementById('stepperSlider').value = 0;
+                    document.getElementById('stepperSlider').dispatchEvent(new Event('input'));
+
+                    document.getElementById('loadingStatus').textContent = "✅ 分析完成！";
+                    setTimeout(() => document.getElementById('loadingStatus').textContent = "", 3000);
+                }
+            } catch(e) {
+                document.getElementById('loadingStatus').textContent = "❌ 連線失敗";
+            }
+        }
+
+        function buildGrid(gridId, selectId, callback) {
+            const grid = document.getElementById(gridId);
+            grid.innerHTML = '';
+            for(let i=0; i<16; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'grid-cell';
+                cell.dataset.id = i;
+                cell.onclick = (e) => {
+                    const box = document.getElementById(selectId);
+                    box.style.display = 'block';
+                    box.style.left = e.target.offsetLeft + 'px';
+                    box.style.top = e.target.offsetTop + 'px';
+                    box.style.width = e.target.offsetWidth + 'px';
+                    box.style.height = e.target.offsetHeight + 'px';
+                    callback(i, cell);
+                };
+                grid.appendChild(cell);
+            }
+        }
+
+        // 共用矩陣繪製
+        function drawMatrix(canvasId, mat) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            const N = 16, cell = canvas.width / N;
+            ctx.clearRect(0,0, canvas.width, canvas.height);
+            ctx.font = `bold ${cell*0.4}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+            for(let r=0; r<N; r++) {
+                for(let c=0; c<N; c++) {
+                    const raw = Number(mat[r][c])||0;
+                    const v = raw <= 3 ? raw*85 : Math.round(raw);
+                    ctx.fillStyle = `rgb(${v},${v},${v})`; ctx.fillRect(c*cell, r*cell, cell, cell);
+                    ctx.fillStyle = v>128 ? '#000' : '#fff'; ctx.fillText(raw, c*cell+cell/2, r*cell+cell/2);
+                }
+            }
+        }
+        
+        function arnoldTransform(mat, iters, inv=false) {
+            const N = 16; let cur = JSON.parse(JSON.stringify(mat));
+            for(let i=0; i<iters; i++) {
+                let next = Array(N).fill(0).map(()=>Array(N).fill(0));
+                for(let x=0; x<N; x++) for(let y=0; y<N; y++) {
+                    if(inv) next[(2*x-y+2*N)%N][(-x+y+2*N)%N] = cur[x][y];
+                    else next[(x+y)%N][(x+2*y)%N] = cur[x][y];
+                }
+                cur = next;
+            }
+            return cur;
+        }
+
+        // Embed 邏輯
+        let eTimer;
+        function loadEmbedBlock(id, cell) {
+            if(!embedData) return;
+            const d = embedData[id];
+            document.getElementById('eBlockId').textContent = id;
+            document.getElementById('eArnoldMax').textContent = d.arnold_iterations;
+            document.getElementById('eBadge').textContent = "原始 Bottleneck 就緒";
+            document.getElementById('eSlider').max = d.arnold_iterations;
+            document.getElementById('eSlider').value = 0;
+            document.getElementById('eBtnArnold').disabled = true;
+            if(eTimer) clearInterval(eTimer);
+            drawMatrix('eRealCanvas', d.orig_matrix);
+            drawMatrix('eOrigCanvas', d.orig_matrix);
+            drawMatrix('eXorCanvas', d.xor_matrix);
+            drawMatrix('eArnoldCanvas', d.arnold_matrix);
+            
+            document.getElementById('eBtnXor').onclick = () => {
+                let step = 0; let cur = JSON.parse(JSON.stringify(d.orig_matrix));
+                document.getElementById('eLaser').style.display = 'block';
+                eTimer = setInterval(() => {
+                    if(step<16) { for(let c=0; c<16; c++) cur[step][c] = d.xor_matrix[step][c]; }
+                    drawMatrix('eRealCanvas', cur);
+                    document.getElementById('eLaser').style.top = `${(step/16)*320}px`;
+                    if(++step >= 16) { 
+                        clearInterval(eTimer); document.getElementById('eLaser').style.display = 'none'; 
+                        document.getElementById('eBtnArnold').disabled = false;
+                        document.getElementById('eSlider').disabled = false;
+                    }
+                }, 35);
+            };
+            
+            document.getElementById('eSlider').oninput = (e) => drawMatrix('eRealCanvas', arnoldTransform(d.xor_matrix, e.target.value));
+            document.getElementById('eBtnArnold').onclick = () => {
+                let cur = 0; 
+                eTimer = setInterval(() => {
+                    cur++; document.getElementById('eSlider').value = cur;
+                    drawMatrix('eRealCanvas', arnoldTransform(d.xor_matrix, cur));
+                    if(cur >= d.arnold_iterations) clearInterval(eTimer);
+                }, 100);
+            };
+            if(cell) cell.click(); // 觸發框線
+        }
+
+        // Recover 邏輯
+        let rTimer;
+        function loadRecoverBlock(id, cell) {
+            if(!recoverData) return;
+            const d = recoverData[id];
+            document.getElementById('rBlockId').textContent = id;
+            document.getElementById('rArnoldMax').textContent = d.arnold_iterations;
+            document.getElementById('rBadge').textContent = "2LSB 浮水印已提取";
+            document.getElementById('rSlider').max = d.arnold_iterations;
+            document.getElementById('rSlider').value = 0;
+            document.getElementById('rSlider').disabled = false;
+            document.getElementById('rBtnXor').disabled = true;
+            if(rTimer) clearInterval(rTimer);
+            drawMatrix('rRealCanvas', d.matrix_2lsb);
+            drawMatrix('r2lsbCanvas', d.matrix_2lsb);
+            drawMatrix('rInvArnoldCanvas', d.matrix_inv_arnold);
+            drawMatrix('rRestoredCanvas', d.matrix_restored);
+
+            document.getElementById('rSlider').oninput = (e) => {
+                drawMatrix('rRealCanvas', arnoldTransform(d.matrix_2lsb, e.target.value, true));
+                if(e.target.value == d.arnold_iterations) document.getElementById('rBtnXor').disabled = false;
+            };
+
+            document.getElementById('rBtnArnold').onclick = () => {
+                let cur = 0; 
+                rTimer = setInterval(() => {
+                    cur++; document.getElementById('rSlider').value = cur;
+                    drawMatrix('rRealCanvas', arnoldTransform(d.matrix_2lsb, cur, true));
+                    if(cur >= d.arnold_iterations) { clearInterval(rTimer); document.getElementById('rBtnXor').disabled = false; }
+                }, 100);
+            };
+
+            document.getElementById('rBtnXor').onclick = () => {
+                let step = 0; let cur = JSON.parse(JSON.stringify(d.matrix_inv_arnold));
+                document.getElementById('rLaser').style.display = 'block';
+                rTimer = setInterval(() => {
+                    const row = 15 - step;
+                    if(row >= 0) { for(let c=0; c<16; c++) cur[row][c] = d.matrix_restored[row][c]; }
+                    drawMatrix('rRealCanvas', cur);
+                    document.getElementById('rLaser').style.top = `${row/16*320}px`;
+                    if(++step >= 16) { clearInterval(rTimer); document.getElementById('rLaser').style.display = 'none'; }
+                }, 35);
+            };
+            if(cell) cell.click();
+        }
+    </script>
+</body>
+</html>

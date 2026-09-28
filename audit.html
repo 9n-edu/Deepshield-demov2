@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>資安稽核與資料救援中心</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f0f4f8; color: #333; }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-top: 5px solid #007BFF; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px; }
+        .header h2 { color: #007BFF; margin: 0; }
+        .btn-back { padding: 8px 15px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-back:hover { background: #5a6268; }
+        
+        .control-panel { display: flex; gap: 15px; margin-bottom: 30px; align-items: center; }
+        select { flex: 1; padding: 10px; font-size: 16px; border-radius: 4px; border: 1px solid #ccc; }
+        .btn-audit { padding: 10px 20px; background: #28a745; color: white; border: none; font-size: 16px; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        .btn-audit:hover { background: #218838; }
+
+        .image-gallery { display: flex; gap: 15px; margin-top: 20px; }
+        .img-box { flex: 1; text-align: center; border: 1px solid #ddd; padding: 10px; border-radius: 4px; background: #fafafa; }
+        .img-box h4 { margin-top: 0; color: #555; }
+        .img-box img { max-width: 100%; height: 200px; object-fit: contain; background: #fff; border: 1px solid #eee; }
+        
+        .status-log { margin-top: 20px; padding: 15px; background: #e9ecef; border-radius: 4px; font-family: monospace; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="header">
+            <h2>🛡️ 企業資安稽核中心 (<span id="deptName"></span>)</h2>
+            <button class="btn-back" onclick="window.location.href='manager.html'">返回總覽</button>
+        </div>
+        
+        <div class="control-panel">
+            <label><strong>選擇稽核目標：</strong></label>
+            <select id="targetEmpId">
+                <option value="">載入名單中...</option>
+            </select>
+            <button class="btn-audit" onclick="runAudit()">執行偵測與還原</button>
+        </div>
+
+        <div class="image-gallery">
+            <div class="img-box">
+                <h4>1. 資料庫當前影像</h4>
+                <img id="currentImg" src="" alt="等待載入">
+            </div>
+            <div class="img-box">
+                <h4 style="color: #dc3545;">2. 竄改區域偵測 (紅框)</h4>
+                <img id="boxedImg" src="" alt="等待偵測">
+            </div>
+            <div class="img-box">
+                <h4 style="color: #28a745;">3. 最終修復影像 (已入庫)</h4>
+                <img id="recoveredImg" src="" alt="等待修復">
+            </div>
+        </div>
+
+        <div class="status-log" id="statusLog">系統準備就緒...</div>
+    </div>
+
+    <script>
+        // 權限驗證與部門名單載入
+        window.onload = async function() {
+            const role = localStorage.getItem('roleLevel');
+            const dept = localStorage.getItem('department');
+
+            if (role !== 'admin') {
+                alert('權限不足，僅限該部門主管進入稽核中心。');
+                window.location.href = 'login.html';
+                return;
+            }
+
+            document.getElementById('deptName').textContent = dept;
+
+            try {
+                // 僅抓取該主管所屬部門的員工
+                const res = await fetch(`http://127.0.0.1:8000/api/get_department_employees/${dept}`);
+                const result = await res.json();
+                
+                const selectElement = document.getElementById('targetEmpId');
+                selectElement.innerHTML = '<option value="">-- 請選擇本部門的稽核對象 --</option>';
+                
+                if(result.status === 'success') {
+                    result.data.forEach(emp => {
+                        selectElement.innerHTML += `<option value="${emp.emp_id}">${emp.emp_id} - ${emp.name}</option>`;
+                    });
+                }
+            } catch (err) {
+                console.error(err);
+                document.getElementById('statusLog').textContent = "無法連線至伺服器載入名單。";
+            }
+        };
+
+        // 當選單改變時，預覽當前圖片
+        document.getElementById('targetEmpId').addEventListener('change', async function() {
+            const empId = this.value;
+            if(!empId) return;
+            
+            document.getElementById('boxedImg').src = "";
+            document.getElementById('recoveredImg').src = "";
+            document.getElementById('statusLog').textContent = `正在讀取 ${empId} 的資料...`;
+
+            try {
+                const res = await fetch(`http://127.0.0.1:8000/api/get_employee/${empId}`);
+                const data = await res.json();
+                if(data.status === 'success') {
+                    document.getElementById('currentImg').src = data.data.encrypted_photo_base64;
+                    document.getElementById('statusLog').textContent = `已載入 ${empId} 的資料庫影像，等待執行偵測。`;
+                }
+            } catch (err) {
+                document.getElementById('statusLog').textContent = `讀取失敗: ${err}`;
+            }
+        });
+
+        // 執行修復
+        async function runAudit() {
+            const empId = document.getElementById('targetEmpId').value;
+            if(!empId) return alert("請先選擇本部門的稽核目標");
+
+            document.getElementById('statusLog').innerHTML = "<span style='color:blue;'>正在分析影像並執行還原演算法，請稍候...</span>";
+            
+            const formData = new FormData();
+            formData.append('emp_id', empId);
+
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/audit_and_recover', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                
+                if(data.status === 'success') {
+                    document.getElementById('boxedImg').src = data.boxed_image;
+                    document.getElementById('recoveredImg').src = data.recovered_image;
+                    document.getElementById('statusLog').innerHTML = `<span style='color:green; font-weight:bold;'>➤ ${data.message}</span>`;
+                } else {
+                    document.getElementById('statusLog').textContent = `稽核失敗: ${data.message}`;
+                }
+            } catch (err) {
+                document.getElementById('statusLog').textContent = `連線錯誤: ${err}`;
+            }
+        }
+    </script>
+</body>
+</html>

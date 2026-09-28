@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>員工登入系統</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f4f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-box { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 100%; max-width: 320px; text-align: center; }
+        .login-box h2 { margin-bottom: 20px; color: #333; }
+        .login-box input { width: 90%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+        
+        .action-row { text-align: left; width: 95%; margin: 0 auto 20px auto; }
+        .action-row a { color: #007BFF; text-decoration: none; font-size: 14px; }
+        .action-row a:hover { text-decoration: underline; }
+
+        .login-box button { width: 100%; padding: 12px; background-color: #007BFF; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
+        .login-box button:hover { background-color: #0056b3; }
+        .error-msg { color: #dc3545; font-size: 14px; margin-top: 10px; min-height: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="login-box">
+        <h2>員工系統登入</h2>
+        <form id="loginForm">
+            <input type="text" id="empId" placeholder="員工編號 (如: RDE-0000)" required>
+            <input type="password" id="password" placeholder="密碼" required>
+            
+            <div class="action-row">
+                <a href="reg.html">新增帳號</a>
+            </div>
+
+            <button type="submit">登入</button>
+        </form>
+        <div id="errorMsg" class="error-msg"></div>
+    </div>
+
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault(); 
+            
+            const empId = document.getElementById('empId').value;
+            const password = document.getElementById('password').value;
+            const errorMsg = document.getElementById('errorMsg');
+            
+            errorMsg.textContent = "登入中...";
+
+            const formData = new FormData();
+            formData.append('emp_id', empId);
+            formData.append('password', password);
+
+            try {
+                const response = await fetch('http://127.0.0.1:8000/api/login', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    // 1. 將後端回傳的權限資料存入瀏覽器
+                    localStorage.setItem('loggedInEmpId', result.emp_id);
+                    localStorage.setItem('roleLevel', result.role_level);
+                    localStorage.setItem('department', result.department);
+                    
+                    // 2. 判斷權限決定跳轉去哪裡
+                    if (result.role_level === 'admin') {
+                        window.location.href = 'manager.html';
+                    } else {
+                        window.location.href = 'profile.html';
+                    }
+                } else {
+                    errorMsg.textContent = result.message;
+                }
+            } catch (error) {
+                errorMsg.textContent = "無法連線至伺服器，請確認後端已啟動。";
+            }
+        });
+    </script>
+</body>
+</html>

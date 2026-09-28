@@ -1,0 +1,9 @@
+﻿venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+.restore_block.txt
+
+.env
+firebase_key.json
